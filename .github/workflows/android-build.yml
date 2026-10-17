@@ -9,7 +9,6 @@ on:
 
 jobs:
   build-apk:
-    name: Build Android APK
     runs-on: ubuntu-24.04
 
     permissions:
@@ -23,11 +22,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          test -f gboard-plus-ru-project.zip
           mkdir -p project
           unzip -q gboard-plus-ru-project.zip -d project
-
           test -f project/settings.gradle
           test -f project/app/build.gradle
 
@@ -42,40 +38,28 @@ jobs:
         run: |
           set -euo pipefail
 
-          SDK_ROOT="${ANDROID_HOME:-$HOME/android-sdk}"
+          SDK_ROOT="$RUNNER_TEMP/android-sdk"
 
-          mkdir -p "$SDK_ROOT/cmdline-tools"
+          mkdir -p "$SDK_ROOT/cmdline-tools/latest"
 
-          SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
-            -type f -name sdkmanager 2>/dev/null \
-            | head -n 1 || true)
+          curl -fL --retry 3 \
+            "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
+            -o "$RUNNER_TEMP/android-tools.zip"
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "Installing Android command-line tools..."
+          unzip -q "$RUNNER_TEMP/android-tools.zip" \
+            -d "$RUNNER_TEMP/android-tools"
 
-            curl -fL --retry 3 \
-              "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
-              -o /tmp/android-tools.zip
+          cp -a "$RUNNER_TEMP/android-tools/cmdline-tools/." \
+            "$SDK_ROOT/cmdline-tools/latest/"
 
-            mkdir -p /tmp/android-tools
-            unzip -q /tmp/android-tools.zip \
-              -d /tmp/android-tools
-
-            mkdir -p "$SDK_ROOT/cmdline-tools/latest"
-
-            cp -a /tmp/android-tools/cmdline-tools/. \
-              "$SDK_ROOT/cmdline-tools/latest/"
-
-            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          fi
-
-          chmod +x "$SDKMANAGER"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
 
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" \
-            --licenses > /dev/null || true
+          set +o pipefail
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses > /dev/null
+          set -o pipefail
 
           "$SDKMANAGER" --sdk_root="$SDK_ROOT" \
             --install \
@@ -92,10 +76,7 @@ jobs:
         working-directory: project
         shell: bash
         run: |
-          set -euo pipefail
-          gradle :app:assembleDebug \
-            --no-daemon \
-            --stacktrace
+          gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
